@@ -69,18 +69,20 @@ class Dumper:
             if ('[' + name + ']') in rng:
                 return [int(el, 16) for el in rng[0].split(' ')[0].split('-')]  # [stack start address, stack end address]
 
-    def dump_range(self, name, pagesize=4096, winsize=4):
+    def dump_range(self, name, pagesize=4096, winsize=4, filter=False):
         start, end = self.get_range(name)
         memory = []
+        indices = []
         for i in range(start, end, pagesize):
             res = dumper.read(i, pagesize)
-            if res == (b'\x00' * pagesize):
+            if filter and (res == (b'\x00' * pagesize)):
                 continue
             for j in range(0, len(res), 4):
                 window = res[j: j + winsize]
                 memory.append(window)
+                indices.append(i)
 
-        return memory
+        return memory, indices
 
 
 address = None
