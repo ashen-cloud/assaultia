@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import argparse
+import binascii
 
 from multiprocessing import Pool
 from argparse import ArgumentParser
@@ -16,8 +17,13 @@ sys.set_int_max_str_digits(10000000)
 parser = ArgumentParser()
 
 parser.add_argument("-t", "--test", action=argparse.BooleanOptionalAction, help="Run memory dumping tests")
+parser.add_argument('pid', nargs='?', help='Pid to dump')
 
 args = parser.parse_args()
+
+if not args.test and not args.pid:
+    print('Nothing to do')
+    exit(1)
 
 
 class Dumper:
@@ -26,7 +32,7 @@ class Dumper:
     mem_file_path = None
 
     maps = []
-    raw_maps = []
+    maps_raw = []
 
     def __init__(self, pid):
         self.pid = pid
@@ -43,25 +49,38 @@ class Dumper:
                 addr_range = parts[0].split("-")
                 start = int(addr_range[0], 16)
                 end = int(addr_range[1], 16)
-                self.raw_maps.append(line)
+                self.maps_raw.append(line)
                 self.maps.append((start, end))
 
-            return self.maps, self.raw_maps  # maps is a list of tuples containing memory ranges in int format
+            return self.maps, self.maps_raw  # maps is a list of tuples containing memory ranges in int format
 
-    def read(self, address, length=4):
+    def read(self, address, length=4):  # for singular addresses
         try:
             with open(self.mem_file_path, 'rb') as f:
                 f.seek(address)
                 data = f.read(length)
                 return data
         except OSError:
-            pass
+            return None
 
-    def get_range(self, name):
-        for line in self.raw_maps:
+    def get_range(self, name):  # one of stack,heap,etc
+        for line in self.maps_raw:
             rng = [l.replace(' ' * 7, '') for l in line.strip().split(' ' * 19)]
             if ('[' + name + ']') in rng:
-                return rng[0].split(' ')[0].split('-')
+                return [int(el, 16) for el in rng[0].split(' ')[0].split('-')]  # [stack start address, stack end address]
+
+    def dump_range(self, name, pagesize=4096, winsize=4):
+        start, end = self.get_range(name)
+        memory = []
+        for i in range(start, end, pagesize):
+            res = dumper.read(i, pagesize)
+            if res == (b'\x00' * pagesize):
+                continue
+            for j in range(0, len(res), 4):
+                window = res[j: j + winsize]
+                memory.append(window)
+
+        return memory
 
 
 address = None
@@ -98,8 +117,15 @@ def test_read():
 
     stack, stack_end = dumper.get_range('stack')
 
-    stack = int(stack, 16)
-    stack_end = int(stack_end, 16)
+    address = int(address, 16)
+
+    print('Testing address is within stack range')
+
+    stack_len = len(range(stack, stack_end))
+    address_index = range(stack, stack_end).index(address)
+    assert stack_len > address_index
+
+    print('Passed ✓')
 
     print('Testing stack extract')
 
@@ -108,9 +134,6 @@ def test_read():
     print('Passed ✓')
 
     print('Testing read')
-
-    address = int(address, 16)
-    print('address index in stack', range(stack, stack_end).index(address))
 
     res = dumper.read(address, 4)
     res_int = int.from_bytes(res, 'little')
@@ -123,3 +146,12 @@ def test_read():
 if __name__ == '__main__':
     if args.test:
         test_read()
+        quit()
+
+    dumper = Dumper(args.pid)
+
+    dumper.read_maps()
+
+    stack_memory = dumper.dump_range('stack')
+
+    print(stack_memory)
