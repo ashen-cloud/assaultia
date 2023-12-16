@@ -74,7 +74,7 @@ class Dumper:
         memory = []
         indices = []
         for i in range(start, end, pagesize):
-            res = dumper.read(i, pagesize)
+            res = self.read(i, pagesize)
             if filter and (res == (b'\x00' * pagesize)):
                 continue
             for j in range(0, len(res), 4):
@@ -135,7 +135,7 @@ def test_read():
 
     print('Passed ✓')
 
-    print('Testing read')
+    print('Testing stack read')
 
     res = dumper.read(address, 4)
     res_int = int.from_bytes(res, 'little')
@@ -143,6 +143,29 @@ def test_read():
     assert res_int == 1338
 
     print('Passed ✓')
+
+    print('Testing heap read')
+
+    heap_memory = dumper.dump_range('heap')
+
+    found = False
+    found_page = None
+    found_window = None
+
+    i = 0
+    j = 0
+    for page in heap_memory:
+        for window in page:
+            if window == b'9\x05\x00\x00':
+                found_page = i
+                found_window = j
+                found = True
+            j += 1
+        i += 1
+
+    assert found is True
+    assert found_page == 0
+    assert found_window == 1196
 
 
 if __name__ == '__main__':
@@ -155,5 +178,5 @@ if __name__ == '__main__':
     dumper.read_maps()
 
     stack_memory = dumper.dump_range('stack')
+    heap_memory = dumper.dump_range('heap')
 
-    print(stack_memory)
